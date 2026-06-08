@@ -5,15 +5,15 @@
 2. В db.py указаны верные host, user, password, database.
 3. Установлены библиотеки: PyQt6, pymysql
 
-# Запуск: python main.py#
+# Запуск: python main.py
 
-## Учетные записи:##
+## Учетные записи:
 - admin / admin
 - manager / manager
 - client / client
 - кнопка "Войти как гость"
 
-## Состав проекта:##
+## Состав проекта:
 - main.py - исходный код приложения
 - database.sql - дамп базы данных
 - er_model.pdf - ER-модель базы данных
