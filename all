@@ -1,0 +1,692 @@
+import sys
+
+from PyQt6.QtGui import *
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from db import Sql
+
+class Autho(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('Авторизация')
+        self.setWindowIcon(QIcon('../protective_eyes/images/Глазки-save.ico'))
+        self.resize(700, 500)
+        self.win()
+
+    def win(self):
+        self.main_lay = QVBoxLayout(self)
+        self.login = QLineEdit()
+        self.login.setPlaceholderText('логин')
+        self.password = QLineEdit()
+        self.password.setPlaceholderText('пароль')
+        btn = QPushButton('Войти')
+        btn.clicked.connect(self.open_win)
+
+        self.main_lay.addWidget(self.login)
+        self.main_lay.addWidget(self.password)
+        self.main_lay.addWidget(btn)
+
+    def open_win(self):
+        login = self.login.text()
+        password = self.password.text()
+        user = Sql().autho(login, password)
+        if not user:
+            QMessageBox.warning(self, 'ошибка', 'такого пользователя нет')
+        if user['role'] == 'admin':
+            self.open_admin = MainWindow()
+            self.open_admin.show()
+        # elif user['role'] == 'manager':
+        #     self.open_admin = ManagerWindow()
+        #     self.open_admin.show()
+        # else:
+        #     self.open_admin = ClientWindow()
+        #     self.open_admin.show()
+
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowIcon(QIcon('ico-main.ico'))
+        self.setWindowTitle('Магазин обуви')
+        self.resize(800,500)
+        self.win()
+
+    def win(self):
+        self.main_lay = QVBoxLayout(self)
+
+        self.poisk = QLineEdit()
+        self.poisk.setPlaceholderText('Поиск')
+        self.filter = QComboBox()
+        self.filter.addItems(['Без фильтра','Женская обувь', 'Мужская обувь'])
+        self.sort = QComboBox()
+        self.sort.addItems(['Без сортировки', 'по цене вверх', 'по цене вниз'])
+
+        self.poisk.textEdited.connect(self.search)
+        self.filter.currentIndexChanged.connect(self.search)
+        self.sort.currentIndexChanged.connect(self.search)
+
+        hlay = QHBoxLayout()
+        self.main_lay.addLayout(hlay)
+        hlay.addWidget(self.poisk)
+        hlay.addWidget(self.filter)
+        hlay.addWidget(self.sort)
+
+        self.orders = QPushButton('Заказы')
+        self.orders.clicked.connect(self.win_order)
+        self.main_lay.addWidget(self.orders)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        self.content_lay = QVBoxLayout()
+
+        self.main_lay.addWidget(scroll_area)
+        scroll_area.setWidget(scroll_widget)
+        scroll_widget.setLayout(self.content_lay)
+
+        data = Sql().all_products()
+        for products in data:
+            photo = QLabel()
+            photo.setFrameStyle(QFrame.Shape.Box)
+            photo.setPixmap(QPixmap(products['photo'] or 'ico-main.ico').scaled(50,50))
+
+            name = QLabel(f"<b>{products['name_cat']} | {products['name_prod']}</b1>")
+            description = QLabel(f"Описание товара: {products['description_prod']}")
+            manufact = QLabel(f"Производитель: {products['name_man']}")
+            suppliers = QLabel(f"Поставщик: {products['name_sup']}")
+            price = QLabel(f"Цена: {products['price']}")
+            old_price = QLabel()
+            counts = QLabel(f"Количество на складе: {products['quantity']}")
+
+            discount = QLabel(str(products['current_discount']))
+            discount.setFrameStyle(QFrame.Shape.Box)
+            if products['current_discount'] > 0:
+                discount.setStyleSheet("color: red; font-weight: bold;")
+                price_with_discount = products['price'] * (100 - products['current_discount']) / 100
+                price.setText(f"{price_with_discount:.0f} ₽")
+                old_price.setText(f"({products['price']} ₽)")
+                price.setStyleSheet("color: green;")
+                old_price.setStyleSheet("text-decoration: line-through; color: red;")
+
+            btn_update = QPushButton('Редактировать')
+            btn_update.clicked.connect(lambda _, p=products: self.update(p))
+            btn_delete = QPushButton('Удалить')
+            btn_delete.clicked.connect(lambda _, p=products: self.delete_(p))
+
+            frame = QFrame()
+            frame.setFrameStyle(QFrame.Shape.Box)
+            self.content_lay.addWidget(frame)
+            hlay = QHBoxLayout(frame)
+
+            hlay.addWidget(photo)
+            vlay = QVBoxLayout()
+            hlay.addLayout(vlay, 1)
+            vlay.addWidget(name)
+            vlay.addWidget(description)
+            vlay.addWidget(manufact)
+            vlay.addWidget(suppliers)
+            vlay.addWidget(price)
+            vlay.addWidget(old_price)
+            vlay.addWidget(counts)
+            hlay.addWidget(discount)
+
+            vlay2 = QVBoxLayout()
+            hlay.addLayout(vlay2)
+            vlay2.addWidget(btn_update)
+            vlay2.addWidget(btn_delete)
+
+        btn = QPushButton('Добавить товар')
+        btn.clicked.connect(self.add)
+        self.main_lay.addWidget(btn)
+
+    def load_photo(self):
+        self.lbl_photo = QLabel()
+        self.path_file, _ = QFileDialog.getOpenFileName(self, 'Выбрать фото',
+                                                        '',
+                                                        'Images (*.png *.jpg')
+        print(self.path_file)
+        if self.path_file:
+            user_icon = QPixmap(self.path_file)
+            user_icon = user_icon.scaled(200,200)
+            self.lbl_photo.setPixmap(user_icon)
+            self.lbl_photo.setText("")
+
+    def win_order(self):
+        self.open_or = OrderWin()
+        self.open_or.show()
+
+    def add(self):
+        self.open_add = AddWin(self.search)
+        self.open_add.show()
+
+    def delete_(self, p):
+        Sql().delete(p['id_prod'])
+        self.search()
+
+    def update(self, p):
+        self.open_update = UpdateWin(p, self.search)
+        self.open_update.show()
+
+
+    def clear_lay(self):
+        while self.content_lay.count():
+            item = self.content_lay.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+    def search(self):
+        self.clear_lay()
+
+        poisk = self.poisk.text()
+        filter = self.filter.currentText()
+        sort = self.sort.currentText()
+
+        data = Sql().search(poisk, filter, sort)
+        for products in data:
+            photo = QLabel()
+            photo.setFrameStyle(QFrame.Shape.Box)
+            photo.setPixmap(QPixmap(products['photo'] or 'ico-main.ico').scaled(50, 50))
+
+            name = QLabel(f"<b>{products['name_cat']} | {products['name_prod']}</b1>")
+            description = QLabel(f"Описание товара: {products['description_prod']}")
+            manufact = QLabel(f"Производитель: {products['name_man']}")
+            suppliers = QLabel(f"Поставщик: {products['name_sup']}")
+            price = QLabel(f"Цена: {products['price']}")
+            old_price = QLabel()
+            counts = QLabel(f"Количество на складе: {products['quantity']}")
+
+            discount = QLabel(str(products['current_discount']))
+            discount.setFrameStyle(QFrame.Shape.Box)
+            if products['current_discount'] > 0:
+                discount.setStyleSheet("color: red; font-weight: bold;")
+                price_with_discount = products['price'] * (100 - products['current_discount']) / 100
+                price.setText(f"{price_with_discount:.0f} ₽")
+                old_price.setText(f"({products['price']} ₽)")
+                price.setStyleSheet("color: green;")
+                old_price.setStyleSheet("text-decoration: line-through; color: red;")
+
+            btn_update = QPushButton('Редактировать')
+            btn_update.clicked.connect(lambda _, p=products: self.update(p))
+            btn_delete = QPushButton('Удалить')
+            btn_delete.clicked.connect(lambda _, p=products: self.delete_(p))
+
+            frame = QFrame()
+            frame.setFrameStyle(QFrame.Shape.Box)
+            self.content_lay.addWidget(frame)
+            hlay = QHBoxLayout(frame)
+
+            hlay.addWidget(photo)
+            vlay = QVBoxLayout()
+            hlay.addLayout(vlay, 1)
+            vlay.addWidget(name)
+            vlay.addWidget(description)
+            vlay.addWidget(manufact)
+            vlay.addWidget(suppliers)
+            vlay.addWidget(price)
+            vlay.addWidget(old_price)
+            vlay.addWidget(counts)
+            hlay.addWidget(discount)
+
+            vlay2 = QVBoxLayout()
+            hlay.addLayout(vlay2)
+            vlay2.addWidget(btn_update)
+            vlay2.addWidget(btn_delete)
+
+class OrderWin(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowIcon(QIcon('../resources/icons/ico-main.ico'))
+        self.setWindowTitle('Фитнесс клуб')
+        self.resize(800,500)
+        self.win()
+
+    def win(self):
+        self.main_lay = QVBoxLayout(self)
+
+        self.back = QPushButton('Выйти')
+        self.back.clicked.connect(lambda : self.close())
+        self.add_order = QPushButton('Добавить заказ')
+
+        self.main_lay.addWidget(self.back)
+        self.main_lay.addWidget(self.add_order)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        self.content_lay = QVBoxLayout()
+
+        self.main_lay.addWidget(scroll_area)
+        scroll_area.setWidget(scroll_widget)
+        scroll_widget.setLayout(self.content_lay)
+
+        data = Sql().all_orders()
+        for products in data:
+
+            art = QLabel(f"<b>{products['order_number']}</b1>")
+            status = QLabel(f"{products['status_order']}")
+            address = QLabel(f"{products['address']}")
+            date_order = QLabel(f"{products['order_date']}")
+            date_delivery = QLabel(f"{products['delivery_date']}")
+            date_delivery.setFrameStyle(QFrame.Shape.Box)
+
+            btn_update = QPushButton('Редактировать')
+            # btn_update.clicked.connect(lambda _, p=products: self.update(p))
+            btn_delete = QPushButton('Удалить')
+            btn_delete.clicked.connect(lambda _, p=products: self.delete_(p))
+
+            frame = QFrame()
+            frame.setFrameStyle(QFrame.Shape.Box)
+            self.content_lay.addWidget(frame)
+            hlay = QHBoxLayout(frame)
+
+            vlay = QVBoxLayout(frame)
+            hlay.addLayout(vlay, 1)
+            vlay.addWidget(art)
+            vlay.addWidget(status)
+            vlay.addWidget(address)
+            vlay.addWidget(date_order)
+            hlay.addWidget(date_delivery)
+
+            vlay2 = QVBoxLayout()
+            hlay.addLayout(vlay2)
+            vlay2.addWidget(btn_update)
+            vlay2.addWidget(btn_delete)
+
+    def delete_(self, p):
+        pass
+
+
+class AddWin(QWidget):
+    def __init__(self, callback):
+        super().__init__()
+        self.setWindowIcon(QIcon('../resources/icons/ico-main.ico'))
+        self.setWindowTitle('Фитнесс клуб')
+        self.resize(600,400)
+        self.callback = callback
+        self.win()
+
+    def win(self):
+        self.main_lay = QVBoxLayout(self)
+
+        self.art = QLineEdit()
+        self.name_prod = QLineEdit()
+        self.counts = QSpinBox()
+        self.price = QSpinBox()
+
+        self.supp = QComboBox()
+        self.supp.addItem('Kari', 1)
+        self.supp.addItem('Обувь для вас', 2)
+
+        self.manufact = QComboBox()
+        self.manufact.addItem('house', 1)
+        self.manufact.addItem('Addidas', 2)
+        self.manufact.addItem('Nike', 3)
+        self.manufact.addItem('Puma', 4)
+        self.manufact.addItem('Alessio Nesca', 5)
+        self.manufact.addItem('CROSBY', 6)
+
+        self.id_cat = QComboBox()
+        self.id_cat.addItem('Женская обувь', 1)
+        self.id_cat.addItem('Мужская обувь', 2)
+
+        self.discount = QSpinBox()
+        self.descrip = QLineEdit()
+        self.photo = QLineEdit()
+
+        btn = QPushButton('Добавить')
+        btn.clicked.connect(self.add_save)
+        # photo_btn = QPushButton('загрузить')
+        # photo_btn.clicked.connect(self.load_photo)
+
+        self.main_lay.addWidget(QLabel('Введите артикул товара'))
+        self.main_lay.addWidget(self.art)
+        self.main_lay.addWidget(QLabel('Введите название товара'))
+        self.main_lay.addWidget(self.name_prod)
+        self.main_lay.addWidget(QLabel('Введите количество товара'))
+        self.main_lay.addWidget(self.counts)
+        self.main_lay.addWidget(QLabel('Введите цену товара'))
+        self.main_lay.addWidget(self.price)
+        self.main_lay.addWidget(QLabel('Выберите поставщика'))
+        self.main_lay.addWidget(self.supp)
+        self.main_lay.addWidget(QLabel('Выберите производителя'))
+        self.main_lay.addWidget(self.manufact)
+        self.main_lay.addWidget(QLabel('Выберите категорию'))
+        self.main_lay.addWidget(self.id_cat)
+        self.main_lay.addWidget(QLabel('Введите скидку на товар'))
+        self.main_lay.addWidget(self.discount)
+        self.main_lay.addWidget(QLabel('Введите описание товара'))
+        self.main_lay.addWidget(self.descrip)
+        self.main_lay.addWidget(QLabel('Введите путь к фото'))
+        self.main_lay.addWidget(self.photo)
+        # self.main_lay.addWidget(photo_btn)
+        self.main_lay.addWidget(btn)
+
+    def add_save(self):
+        art = self.art.text()
+        name_prod = self.name_prod.text()
+        counts = self.counts.text()
+        price = self.price.text()
+        supp = self.supp.currentData()
+        manufact = self.manufact.currentData()
+        id_cat = self.id_cat.currentData()
+        discount = self.discount.text()
+        descrip = self.descrip.text()
+        photo = self.photo.text()
+
+        if not all([art, name_prod, counts, price, supp, manufact, id_cat, discount, descrip]):
+            QMessageBox.warning(self, 'sdfsd', 'заполните все поля')
+        else:
+            Sql().add(art, name_prod, counts, price, supp, manufact, id_cat, discount, descrip, photo)
+            QMessageBox.information(self, 'sdfsd', 'товар добавлен')
+            self.callback()
+            self.close()
+
+    def load_photo(self):
+        self.lbl_photo = QLabel()
+        self.path_file, _ = QFileDialog.getOpenFileName(self, 'Выбрать фото',
+                                                        '',
+                                                        'Images (*.png *.jpg')
+        print(self.path_file)
+        if self.path_file:
+            user_icon = QPixmap(self.path_file)
+            user_icon = user_icon.scaled(200,200)
+            self.lbl_photo.setPixmap(user_icon)
+            self.lbl_photo.setText("")
+
+class UpdateWin(QWidget):
+    def __init__(self, p, callback):
+        super().__init__()
+        self.setWindowIcon(QIcon('../resources/icons/ico-main.ico'))
+        self.setWindowTitle('Фитнесс клуб')
+        self.resize(600,400)
+        self.prod = p
+        self.callback = callback
+        self.win()
+
+    def win(self):
+        self.main_lay = QVBoxLayout(self)
+
+        self.art = QLineEdit(self.prod['art'])
+        self.name_prod = QLineEdit(self.prod['name_prod'])
+        self.counts = QLineEdit(str(self.prod['quantity']))
+        self.price = QLineEdit(str(self.prod['price']))
+
+        self.supp = QComboBox()
+        self.supp.addItem('Kari', 1)
+        self.supp.addItem('Обувь для вас', 2)
+
+        self.manufact = QComboBox()
+        self.manufact.addItem('house', 1)
+        self.manufact.addItem('Addidas', 2)
+        self.manufact.addItem('Nike', 3)
+        self.manufact.addItem('Puma', 4)
+        self.manufact.addItem('Alessio Nesca', 5)
+        self.manufact.addItem('CROSBY', 6)
+
+        self.id_cat = QComboBox()
+        self.id_cat.addItem('Женская обувь', 1)
+        self.id_cat.addItem('Мужская обувь', 2)
+
+        self.discount = QLineEdit(str(self.prod['current_discount']))
+        self.descrip = QLineEdit(self.prod['description_prod'])
+        self.photo = QLineEdit(self.prod['photo'])
+
+        btn = QPushButton('Сохранить изменения')
+        btn.clicked.connect(self.update_save)
+
+        self.main_lay.addWidget(QLabel('Введите артикул товара'))
+        self.main_lay.addWidget(self.art)
+        self.main_lay.addWidget(QLabel('Введите название товара'))
+        self.main_lay.addWidget(self.name_prod)
+        self.main_lay.addWidget(QLabel('Введите количество товара'))
+        self.main_lay.addWidget(self.counts)
+        self.main_lay.addWidget(QLabel('Введите цену товара'))
+        self.main_lay.addWidget(self.price)
+        self.main_lay.addWidget(QLabel('Выберите поставщика'))
+        self.main_lay.addWidget(self.supp)
+        self.main_lay.addWidget(QLabel('Выберите производителя'))
+        self.main_lay.addWidget(self.manufact)
+        self.main_lay.addWidget(QLabel('Выберите категорию'))
+        self.main_lay.addWidget(self.id_cat)
+        self.main_lay.addWidget(QLabel('Введите скидку на товар'))
+        self.main_lay.addWidget(self.discount)
+        self.main_lay.addWidget(QLabel('Введите описание товара'))
+        self.main_lay.addWidget(self.descrip)
+        self.main_lay.addWidget(QLabel('Введите путь к фото'))
+        self.main_lay.addWidget(self.photo)
+        self.main_lay.addWidget(btn)
+
+    def update_save(self):
+        art = self.art.text()
+        name_prod = self.name_prod.text()
+        counts = self.counts.text()
+        price = self.price.text()
+        supp = self.supp.currentData()
+        manufact = self.manufact.currentData()
+        id_cat = self.id_cat.currentData()
+        discount = self.discount.text()
+        descrip = self.descrip.text()
+        photo = self.photo.text()
+
+        Sql().update(art, name_prod, counts, price, supp, manufact, id_cat, discount, descrip, photo, self.prod['id_prod'])
+        QMessageBox.information(self, 'sdfsd', 'товар обновален')
+        self.callback()
+        self.close()
+
+
+
+app = QApplication(sys.argv)
+window = Autho()
+window.show()
+sys.exit(app.exec())
+
+######################################################################################################
+
+
+
+import pymysql
+from pymysql.cursors import DictCursor
+
+class Sql:
+    def __init__(self):
+        self.conn = pymysql.connect(
+            host='127.0.0.1',
+            port=3306,
+            database='demo',
+            user='root',
+            password='',
+            cursorclass=DictCursor,
+            autocommit=True
+        )
+        self.cur = self.conn.cursor()
+
+    def autho(self, login, password):
+        self.cur.execute('select * from users where login=%s and password=%s', (login, password))
+        return self.cur.fetchone()
+
+    def all_products(self):
+        self.cur.execute('SELECT p.id_prod, p.art, c.name_cat, p.name_prod, p.description_prod, m.name_man, s.name_sup, p.price, p.quantity, p.current_discount, p.photo FROM products p JOIN categories c ON p.category_id = c.id_cat JOIN manufacturers m ON p.manufacturer_id = m.id_man JOIN suppliers s ON p.supplier_id = s.id_sup')
+        return self.cur.fetchall()
+
+    def all_orders(self):
+        self.cur.execute('select * from place as p join orders as o on p.id_place=o.pickup_point_id')
+        return self.cur.fetchall()
+
+    def search(self, text='',filter='',sort=''):
+        query = ('SELECT p.id_prod, p.art, c.name_cat, p.name_prod, p.description_prod, m.name_man, s.name_sup, p.price, p.quantity, p.current_discount, p.photo FROM products p JOIN categories c ON p.category_id = c.id_cat JOIN manufacturers m ON p.manufacturer_id = m.id_man JOIN suppliers s ON p.supplier_id = s.id_sup where 1=1')
+        params = []
+
+        if text:
+            query += (' and (name_prod LIKE %s)')
+            params.append(f'%{text}%')
+
+        if filter == 'Женская обувь':
+            query += (" and name_cat = 'Женская обувь'")
+        elif filter == 'Мужская обувь':
+            query += (" and name_cat = 'Мужская обувь'")
+
+        if sort == 'по цене вверх':
+            query += (' order by price asc')
+        elif sort == 'по цене вниз':
+            query += (' order by price desc')
+
+        self.cur.execute(query, params)
+        return self.cur.fetchall()
+
+    def delete(self, id_prod):
+        self.cur.execute("delete from products where id_prod=%s", (id_prod))
+
+    def update(self, art, name_prod, quantity, price, supplier_id, manufacturer_id, category_id, current_discount, description_prod, photo, id):
+        self.cur.execute('update products set art=%s, name_prod=%s, quantity=%s, price=%s, supplier_id=%s, manufacturer_id=%s, category_id=%s, current_discount=%s, description_prod=%s, photo=%s where id_prod=%s', (art, name_prod, quantity, price, supplier_id, manufacturer_id, category_id, current_discount, description_prod, photo, id))
+        return self.cur.fetchall()
+
+    def add(self, art, name_prod, quantity, price, supplier_id, manufacturer_id, category_id, current_discount, description_prod, photo):
+        self.cur.execute('INSERT INTO products (art, name_prod, quantity, price, supplier_id, manufacturer_id, category_id, current_discount, description_prod, photo) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (art, name_prod, quantity, price, supplier_id, manufacturer_id, category_id, current_discount, description_prod, photo))
+        return self.cur.fetchall()
+
+
+
+
+#########################################################################################################################
+
+
+
+
+
+
+DROP DATABASE demo;
+CREATE DATABASE demo;
+USE demo;
+
+CREATE TABLE users (
+    id_users INT PRIMARY KEY AUTO_INCREMENT,
+    full_name VARCHAR(255),
+    login VARCHAR(100),
+    password VARCHAR(255),
+	role ENUM('admin', 'manager', 'client')
+);
+
+INSERT INTO users (full_name, login, password, role) VALUES
+('Никифорова Весения Николаевна', 'admin', 'admin', 'admin'),
+('Степанов Михаил Артёмович', 'manager', 'manager', 'manager'),
+('Старикова Елена Павловна', 'client', 'client', 'client');
+
+CREATE TABLE suppliers (
+    id_sup INT PRIMARY KEY AUTO_INCREMENT,
+    name_sup VARCHAR(100)
+);
+
+INSERT INTO suppliers (name_sup) VALUES
+('Kari'),
+('Обувь для вас');
+
+CREATE TABLE manufacturers (
+    id_man INT PRIMARY KEY AUTO_INCREMENT,
+    name_man VARCHAR(100)
+);
+
+INSERT INTO manufacturers (name_man) VALUES
+('house'),
+('Addidas'),
+('Nike'),
+('Puma'),
+('Alessio Nesca'),
+('CROSBY');
+
+CREATE TABLE categories (
+    id_cat INT PRIMARY KEY AUTO_INCREMENT,
+    name_cat VARCHAR(100)
+);
+
+INSERT INTO categories (name_cat) VALUES
+('Женская обувь'),
+('Мужская обувь');
+
+CREATE TABLE products (
+    id_prod INT PRIMARY KEY AUTO_INCREMENT,
+    art VARCHAR(250),
+    name_prod VARCHAR(255),
+    quantity VARCHAR(20) DEFAULT 'шт.',
+    price DECIMAL(10,2),
+    supplier_id INT,
+    manufacturer_id INT,
+
+    category_id INT,
+    current_discount INT DEFAULT 0,
+    description_prod varchar(255),
+    photo VARCHAR(255),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id_sup),
+    FOREIGN KEY (manufacturer_id) REFERENCES manufacturers(id_man),
+    FOREIGN KEY (category_id) REFERENCES categories(id_cat)
+);
+
+INSERT INTO products (art, name_prod, quantity, price, supplier_id, manufacturer_id, category_id, current_discount, description_prod, photo) VALUES
+('А112Т4', 'Ботинки', '4 шт.', 4990, 1, 1, 1, 3, 'Женские Ботинки демисезонные kari', null),
+('F635R4', 'Ботинки', '2 шт.', 3244, 2, 2, 1, 2, 'Ботинки Marco Tozzi женские демисезонные, размер 39, цвет бежевый', null),
+('H782T5', 'Туфли', '2 шт.', 4499, 1, 1, 2, 4, 'Туфли kari мужские классика MYZ21AW-450A, размер 43, цвет: черный', null),
+('G783F5', 'Ботинки', '3 шт.', 5900, 1, 3, 2, 2, 'Мужские ботинки Рос-Обувь кожаные с натуральным мехом', null),
+('J384T6', 'Ботинки', '4 шт.', 3800, 2, 4, 2, 2, 'B3430/14 Полуботинки мужские Rieker', null),
+('D572U8', 'Кроссовки', '4 шт.', 4100, 2, 3, 2, 3, '129615-4 Кроссовки мужские', null),
+('F572H7', 'Туфли', '55 шт.', 2700, 1, 2, 1, 2, 'Туфли Marco Tozzi женские летние, размер 39, цвет черный', null);
+
+CREATE TABLE place (
+    id_place INT PRIMARY KEY AUTO_INCREMENT,
+    address VARCHAR(255)
+);
+
+INSERT INTO place (address) VALUES
+('420151, г. Балашиха, ул. Бояринова, 32'),
+('125061, г. Москва, ул. Старокачаловская, 8'),
+('630370, г. Балашиха, ул. Кучино, 24'),
+('400562, г. Москва, ул. Зеленая, 32'),
+('614510, г. Балашиха, ул. Маяковского, 47'),
+('410542, г. Москва, ул. Светлая, 46'),
+('620839, г. Балашиха, ул. Цветочная, 8');
+
+CREATE TABLE orders (
+    id_ord INT PRIMARY KEY AUTO_INCREMENT,
+    order_number VARCHAR(50),
+    order_date DATE,
+    delivery_date DATE,
+    pickup_point_id INT,
+    user_id INT,
+    pickup_code VARCHAR(50),
+    status_order VARCHAR(50) ,
+    FOREIGN KEY (pickup_point_id) REFERENCES place(id_place),
+    FOREIGN KEY (user_id) REFERENCES users(id_users)
+);
+
+INSERT INTO orders (order_number, order_date, delivery_date, pickup_point_id, user_id, pickup_code, status_order) VALUES
+('ORD-001', '2026-06-01', '2026-06-05', 1, 1, 'A123', 'Новый'),
+('ORD-002', '2026-06-02', '2026-06-06', 2, 2, 'B456', 'В обработке'),
+('ORD-003', '2026-06-03', '2026-06-07', 3, 1, 'C789', 'Готов к выдаче'),
+('ORD-004', '2026-06-04', '2026-06-08', 4, 2, 'D321', 'Доставлен'),
+('ORD-005', '2026-06-05', '2026-06-09', 5, 1, 'E654', 'Отменен');
+
+CREATE TABLE order_items (
+    id_item INT PRIMARY KEY AUTO_INCREMENT,
+    order_id INT,
+    product_id INT,
+    quantity INT,
+    FOREIGN KEY (order_id) REFERENCES orders(id_ord) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id_prod)
+);
+
+
+SELECT
+    c.name_cat, p.name_prod, p.description_prod, m.name_man, s.name_sup, p.price, p.quantity, p.current_discount, p.photo
+FROM products p
+JOIN categories c ON p.category_id = c.id_cat
+JOIN manufacturers m ON p.manufacturer_id = m.id_man
+JOIN suppliers s ON p.supplier_id = s.id_sup;
+
+--все продукты
+SELECT p.id_prod, p.art, c.name_cat, p.name_prod, p.description_prod, m.name_man, s.name_sup, p.price, p.quantity, p.current_discount, p.photo
+FROM products p JOIN categories c ON p.category_id = c.id_cat
+JOIN manufacturers m ON p.manufacturer_id = m.id_man JOIN suppliers s ON p.supplier_id = s.id_sup
+
+--для заказов
+select * from place as p join orders as o on p.id_place=o.pickup_point_id
+
+
+
